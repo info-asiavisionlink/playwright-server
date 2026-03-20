@@ -4,58 +4,54 @@ const { chromium } = require("playwright");
 const app = express();
 app.use(express.json());
 
-// ヘルスチェック（これ超重要）
 app.get("/", (req, res) => {
-  res.send("OK");
+  res.status(200).send("OK");
 });
 
-// 実行エンドポイント
 app.post("/run", async (req, res) => {
-  console.log("Received request:", req.body);
+  const { url, email, password, count = 1 } = req.body;
 
   let browser;
 
   try {
     browser = await chromium.launch({
-      args: ["--no-sandbox", "--disable-setuid-sandbox"],
+      headless: true,
+      args: ["--no-sandbox", "--disable-setuid-sandbox"]
     });
 
     const page = await browser.newPage();
 
-    const url = req.body.url || "https://example.com";
-
-    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await page.goto(url, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000
+    });
 
     const title = await page.title();
 
     await browser.close();
 
     return res.json({
-      success: true,
+      status: "success",
       title,
+      received: { url, email, password, count }
     });
-  } catch (error) {
-    console.error("ERROR:", error);
+  } catch (err) {
+    console.error("ERROR:", err);
 
     if (browser) {
-      await browser.close();
+      try {
+        await browser.close();
+      } catch (_) {}
     }
 
     return res.status(500).json({
-      success: false,
-      error: error.message,
+      status: "error",
+      message: err.message
     });
   }
 });
 
-// Railway用PORT
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
+const PORT = process.env.PORT || 8080;
+app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
 });
-
-// 👇 強制生存（これで絶対落ちない）
-setInterval(() => {
-  console.log("alive...");
-}, 10000);
