@@ -96,22 +96,40 @@ app.post("/run", async (req, res) => {
     // 9. 少し待つ
     await page.waitForTimeout(5000);
 
-    // 10. 人数プラスボタン
-    const seatPlusSelector = "a.ui-spinner-up";
+    console.log("AFTER LOGIN URL:", page.url());
+    console.log("AFTER LOGIN TITLE:", await page.title());
 
-    await page.waitForSelector(seatPlusSelector, {
-      timeout: 15000
+    // 10. 人数入力を直接 1 にする
+    const seatInputSelector = "input[name^='data[Entry][seat]']";
+
+    await page.waitForSelector(seatInputSelector, {
+      timeout: 15000,
+      state: "visible"
     });
 
-    await page.click(seatPlusSelector);
-    console.log("SEAT PLUS CLICKED");
+    console.log("SEAT INPUT FOUND");
 
-    // 11. 少し待つ
+    // まず fill
+    await page.fill(seatInputSelector, "1");
+
+    // 念のためJSでも value を 1 に固定してイベント発火
+    await page.evaluate((selector) => {
+      const input = document.querySelector(selector);
+      if (!input) return;
+
+      input.value = "1";
+      input.setAttribute("value", "1");
+
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      input.dispatchEvent(new Event("blur", { bubbles: true }));
+    }, seatInputSelector);
+
     await page.waitForTimeout(1000);
 
-    // 12. seat確認
-    const seatCheckValue = await page.evaluate(() => {
-      const input = document.querySelector("input[name^='data[Entry][seat]']");
+    // 11. seat確認
+    const seatCheckValue = await page.evaluate((selector) => {
+      const input = document.querySelector(selector);
       if (!input) {
         return JSON.stringify({
           ok: false,
@@ -125,24 +143,25 @@ app.post("/run", async (req, res) => {
         aria: input.getAttribute("aria-valuenow"),
         name: input.getAttribute("name")
       });
-    });
+    }, seatInputSelector);
 
     console.log("SEAT CHECK:", seatCheckValue);
 
-    // 13. 最終申込ボタン
+    // 12. 最終申込ボタン
     const finalApplySelector = "#entry_submit_button";
 
     await page.waitForSelector(finalApplySelector, {
-      timeout: 15000
+      timeout: 15000,
+      state: "visible"
     });
 
     await page.click(finalApplySelector);
     console.log("FINAL APPLY CLICKED");
 
-    // 14. 少し待つ
+    // 13. 少し待つ
     await page.waitForTimeout(5000);
 
-    // 15. URL / title取得
+    // 14. URL / title取得
     const currentUrl = page.url();
     const pageTitle = await page.title();
 
