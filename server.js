@@ -5,110 +5,87 @@ const app = express();
 app.use(express.json());
 
 app.post('/run', async (req, res) => {
-  const { url, email, password } = req.body;
+  const { url, email, password, count = 1 } = req.body;
 
   let browser;
   let page;
 
   try {
-    console.log('START:', { url, email });
+    console.log('START:', { url, email, count });
 
-    browser = await chromium.launch({
-      headless: true
-    });
-
+    browser = await chromium.launch({ headless: true });
     page = await browser.newPage();
 
-    // まずイベントページへ
     await page.goto(url, {
       waitUntil: 'domcontentloaded',
       timeout: 60000
     });
-    console.log('OPENED URL:', page.url());
 
-    // イベントページの申込ボタン
-    const entryButton = page.locator("form[action*='/entry/'] button").first();
+    console.log('OPENED:', page.url());
 
-    if (await entryButton.count()) {
-      console.log('ENTRY BUTTON FOUND');
-      await entryButton.click();
-      await page.waitForTimeout(2000);
-      console.log('AFTER ENTRY CLICK URL:', page.url());
-    } else {
-      console.log('ENTRY BUTTON NOT FOUND');
+    // 申込ボタン
+    await page.waitForSelector("form[action*='/entry/'] button", { timeout: 10000 });
+    await page.click("form[action*='/entry/'] button");
+
+    console.log('CLICKED ENTRY');
+
+    // ログイン待ち
+    if (await page.locator('#LoginFormEmail').count()) {
+      console.log('LOGIN START');
+
+      await page.fill('#LoginFormEmail', email);
+      await page.fill('#LoginFormPassword', password);
+      await page.click('#UserLoginForm button.btn-primary');
+
+      await page.waitForLoadState('networkidle');
+      console.log('AFTER LOGIN:', page.url());
     }
 
-    // ログインフォームがあればログイン
-    const loginEmail = page.locator('#LoginFormEmail').first();
-    const loginPassword = page.locator('#LoginFormPassword').first();
-    const loginButton = page.locator('#UserLoginForm button.btn-primary, button[type="submit"]').first();
+    // seat入力待ち
+    await page.waitForSelector("input[name^='data[Entry][seat]']", { timeout: 10000 });
 
-    if ((await loginEmail.count()) && (await loginPassword.count())) {
-      console.log('LOGIN FORM FOUND');
+    const seatInput = page.locator("input[name^='data[Entry][seat]']").first();
 
-      await loginEmail.fill(String(email || ''));
-      await loginPassword.fill(String(password || ''));
-      await loginButton.click();
+    console.log('SEAT FOUND');
 
-      await page.waitForTimeout(4000);
-      console.log('AFTER LOGIN URL:', page.url());
-    } else {
-      console.log('LOGIN FORM NOT FOUND');
-    }
+    await seatInput.fill(String(count));
 
-    // 人数を1にする
-    try {
-      const seatInput = page.locator("input[name^='data[Entry][seat]']").first();
+    await seatInput.evaluate((el, val) => {
+      el.value = val;
+      el.setAttribute('value', val);
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    }, String(count));
 
-      if (await seatInput.count()) {
-        console.log('SEAT INPUT FOUND');
+    const current = await seatInput.inputValue();
+    console.log('SEAT SET:', current);
 
-        await seatInput.fill('1');
+    // 最終ボタン待ち
+    await page.waitForSelector('#entry_submit_button', { timeout: 10000 });
 
-        await seatInput.evaluate((el) => {
-          el.value = '1';
-          el.setAttribute('value', '1');
-          el.dispatchEvent(new Event('input', { bubbles: true }));
-          el.dispatchEvent(new Event('change', { bubbles: true }));
-          el.dispatchEvent(new Event('blur', { bubbles: true }));
-        });
+    console.log('FINAL BUTTON FOUND');
 
-        await page.waitForTimeout(1500);
+    await page.click('#entry_submit_button');
 
-        const currentSeatValue = await seatInput.inputValue();
-        console.log('SEAT VALUE:', currentSeatValue);
-      } else {
-        console.log('SEAT INPUT NOT FOUND');
-      }
-    } catch (e) {
-      console.log('SEAT SET ERROR:', e.message);
-    }
-
-    // 最終申込ボタン
-    const finalButton = page.locator('#entry_submit_button').first();
-
-    if (await finalButton.count()) {
-      console.log('FINAL BUTTON FOUND');
-      await finalButton.click();
-      await page.waitForTimeout(3000);
-    } else {
-      console.log('FINAL BUTTON NOT FOUND');
-    }
+    await page.waitForLoadState('networkidle');
 
     const finalUrl = page.url();
-    console.log('SUCCESS URL:', finalUrl);
+
+    console.log('SUCCESS:', finalUrl);
 
     await browser.close();
 
-    return res.json({
+    res.json({
       status: 'success',
-      url: finalUrl
+      finalUrl,
+      seat: current
     });
+
   } catch (err) {
-    console.log('ERROR:', err.message);
+    console.error('ERROR:', err.message);
 
     try {
-      if (page && !page.isClosed()) {
+      if (page) {
         await page.screenshot({
           path: `error-${Date.now()}.png`,
           fullPage: true
@@ -117,18 +94,16 @@ app.post('/run', async (req, res) => {
     } catch (_) {}
 
     try {
-      if (browser) {
-        await browser.close();
-      }
+      if (browser) await browser.close();
     } catch (_) {}
 
-    return res.status(500).json({
+    res.status(500).json({
       status: 'error',
       message: err.message
     });
   }
 });
 
-app.listen(3000, () => {
-  console.log('Server running on http://localhost:3000');
+app.listen(process.env.PORT || 3000, () => {
+  console.log(`Server running on port ${process.env.PORT || 3000}`);
 });
