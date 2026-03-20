@@ -4,11 +4,39 @@ const { chromium } = require("playwright");
 const app = express();
 app.use(express.json());
 
+let sharedBrowser = null;
+let isRunning = false;
+
+// -----------------------------
+// ブラウザを1回だけ起動
+// -----------------------------
+async function getBrowser() {
+  if (!sharedBrowser) {
+    console.log("LAUNCHING SHARED BROWSER...");
+    sharedBrowser = await chromium.launch({
+      headless: true,
+      args: [
+        "--no-sandbox",
+        "--disable-setuid-sandbox",
+        "--disable-dev-shm-usage",
+        "--disable-gpu"
+      ]
+    });
+    console.log("SHARED BROWSER READY");
+  }
+  return sharedBrowser;
+}
+
+// -----------------------------
 // 動作確認
+// -----------------------------
 app.get("/", (req, res) => {
   res.status(200).send("OK");
 });
 
+// -----------------------------
+// 実行
+// -----------------------------
 app.post("/run", async (req, res) => {
   const { url, email, password } = req.body;
 
@@ -19,23 +47,40 @@ app.post("/run", async (req, res) => {
     });
   }
 
-  let browser;
+  if (isRunning) {
+    return res.status(429).json({
+      status: "busy",
+      message: "another job is already running"
+    });
+  }
+
+  isRunning = true;
+
+  let context;
   let page;
 
   try {
     console.log("START:", { url, email });
 
-    browser = await chromium.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
-    });
+    const browser = await getBrowser();
 
-    page = await browser.newPage();
+    // requestごとに軽量なcontextだけ作る
+    context = await browser.newContext();
+    page = await context.newPage();
+
+    // 軽量化：画像・フォント・動画を切る
+    await page.route("**/*", (route) => {
+      const type = route.request().resourceType();
+      if (["image", "font", "media"].includes(type)) {
+        return route.abort();
+      }
+      return route.continue();
+    });
 
     // 1. イベントページへ
     await page.goto(url, {
       waitUntil: "domcontentloaded",
-      timeout: 60000
+      timeout: 30000
     });
 
     console.log("OPENED URL:", page.url());
@@ -48,7 +93,7 @@ app.post("/run", async (req, res) => {
       "form[action*='/entry/'] button[type='submit'], .nav-entry-box button[type='submit'], button.btn-danger";
 
     await page.waitForSelector(firstApplySelector, {
-      timeout: 15000
+      timeout: 10000
     });
 
     await page.click(firstApplySelector);
@@ -62,7 +107,7 @@ app.post("/run", async (req, res) => {
       "#main-contents input[type='text'], #main-contents input[type='email'], input[name='email']";
 
     await page.waitForSelector(emailSelector, {
-      timeout: 15000
+      timeout: 10000
     });
 
     await page.fill(emailSelector, String(email));
@@ -73,7 +118,7 @@ app.post("/run", async (req, res) => {
       "#main-contents input[type='password'], input[name='password']";
 
     await page.waitForSelector(passwordSelector, {
-      timeout: 15000
+      timeout: 10000
     });
 
     await page.fill(passwordSelector, String(password));
@@ -87,20 +132,23 @@ app.post("/run", async (req, res) => {
       "#main-contents form div.text-center > button.btn.btn-hg.btn-primary";
 
     await page.waitForSelector(loginSelector, {
-      timeout: 15000
+      timeout: 10000
     });
 
     await page.click(loginSelector);
     console.log("LOGIN CLICKED");
 
     // 9. 少し待つ
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(1200);
+
+    console.log("AFTER LOGIN URL:", page.url());
+    console.log("AFTER LOGIN TITLE:", await page.title());
 
     // 10. 人数プラスボタン
     const seatPlusSelector = "a.ui-spinner-up";
 
     await page.waitForSelector(seatPlusSelector, {
-      timeout: 15000
+      timeout: 10000
     });
 
     await page.click(seatPlusSelector);
@@ -133,14 +181,14 @@ app.post("/run", async (req, res) => {
     const finalApplySelector = "#entry_submit_button";
 
     await page.waitForSelector(finalApplySelector, {
-      timeout: 15000
+      timeout: 10000
     });
 
     await page.click(finalApplySelector);
     console.log("FINAL APPLY CLICKED");
 
     // 14. 少し待つ
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(1200);
 
     // 15. URL / title取得
     const currentUrl = page.url();
@@ -149,7 +197,7 @@ app.post("/run", async (req, res) => {
     console.log("SUCCESS URL:", currentUrl);
     console.log("PAGE TITLE:", pageTitle);
 
-    await browser.close();
+    await context.close();
 
     return res.json({
       status: "success",
@@ -170,8 +218,8 @@ app.post("/run", async (req, res) => {
     } catch (_) {}
 
     try {
-      if (browser) {
-        await browser.close();
+      if (context) {
+        await context.close();
       }
     } catch (_) {}
 
@@ -179,6 +227,8 @@ app.post("/run", async (req, res) => {
       status: "error",
       message: err.message
     });
+  } finally {
+    isRunning = false;
   }
 });
 
