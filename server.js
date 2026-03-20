@@ -41,7 +41,7 @@ app.post("/run", async (req, res) => {
     console.log("OPENED URL:", page.url());
 
     // 2. 少し待つ
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(300);
 
     // 3. 最初の申込ボタン
     const firstApplySelector =
@@ -55,7 +55,7 @@ app.post("/run", async (req, res) => {
     console.log("FIRST APPLY CLICKED");
 
     // 4. 少し待つ
-    await page.waitForTimeout(2500);
+    await page.waitForTimeout(300);
 
     // 5. メール入力
     const emailSelector =
@@ -80,7 +80,7 @@ app.post("/run", async (req, res) => {
     console.log("PASSWORD INPUT DONE");
 
     // 7. 少し待つ
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(300);
 
     // 8. ログインボタン
     const loginSelector =
@@ -94,7 +94,7 @@ app.post("/run", async (req, res) => {
     console.log("LOGIN CLICKED");
 
     // 9. 少し待つ
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(300);
 
     // 10. 人数プラスボタン
     const seatPlusSelector = "a.ui-spinner-up";
@@ -107,7 +107,7 @@ app.post("/run", async (req, res) => {
     console.log("SEAT PLUS CLICKED");
 
     // 11. 少し待つ
-    await page.waitForTimeout(1000);
+    await page.waitForTimeout(300);
 
     // 12. seat確認
     const seatCheckValue = await page.evaluate(() => {
@@ -140,7 +140,7 @@ app.post("/run", async (req, res) => {
     console.log("FINAL APPLY CLICKED");
 
     // 14. 少し待つ
-    await page.waitForTimeout(5000);
+    await page.waitForTimeout(300);
 
     // 15. URL / title取得
     const currentUrl = page.url();
