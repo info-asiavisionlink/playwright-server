@@ -6,10 +6,6 @@
     "start": "node server.js",
     "postinstall": "npx playwright install --with-deps"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "description": "",
   "dependencies": {
     "express": "^5.2.1",
     "playwright": "^1.58.2"

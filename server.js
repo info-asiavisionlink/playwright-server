@@ -1,109 +1,61 @@
-const express = require('express');
-const { chromium } = require('playwright');
+const express = require("express");
+const { chromium } = require("playwright");
 
 const app = express();
 app.use(express.json());
 
-app.post('/run', async (req, res) => {
-  const { url, email, password, count = 1 } = req.body;
+// ヘルスチェック（これ超重要）
+app.get("/", (req, res) => {
+  res.send("OK");
+});
+
+// 実行エンドポイント
+app.post("/run", async (req, res) => {
+  console.log("Received request:", req.body);
 
   let browser;
-  let page;
 
   try {
-    console.log('START:', { url, email, count });
-
-    browser = await chromium.launch({ headless: true });
-    page = await browser.newPage();
-
-    await page.goto(url, {
-      waitUntil: 'domcontentloaded',
-      timeout: 60000
+    browser = await chromium.launch({
+      args: ["--no-sandbox", "--disable-setuid-sandbox"],
     });
 
-    console.log('OPENED:', page.url());
+    const page = await browser.newPage();
 
-    // 申込ボタン
-    await page.waitForSelector("form[action*='/entry/'] button", { timeout: 10000 });
-    await page.click("form[action*='/entry/'] button");
+    const url = req.body.url || "https://example.com";
 
-    console.log('CLICKED ENTRY');
+    await page.goto(url, { waitUntil: "domcontentloaded" });
 
-    // ログイン待ち
-    if (await page.locator('#LoginFormEmail').count()) {
-      console.log('LOGIN START');
-
-      await page.fill('#LoginFormEmail', email);
-      await page.fill('#LoginFormPassword', password);
-      await page.click('#UserLoginForm button.btn-primary');
-
-      await page.waitForLoadState('networkidle');
-      console.log('AFTER LOGIN:', page.url());
-    }
-
-    // seat入力待ち
-    await page.waitForSelector("input[name^='data[Entry][seat]']", { timeout: 10000 });
-
-    const seatInput = page.locator("input[name^='data[Entry][seat]']").first();
-
-    console.log('SEAT FOUND');
-
-    await seatInput.fill(String(count));
-
-    await seatInput.evaluate((el, val) => {
-      el.value = val;
-      el.setAttribute('value', val);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-    }, String(count));
-
-    const current = await seatInput.inputValue();
-    console.log('SEAT SET:', current);
-
-    // 最終ボタン待ち
-    await page.waitForSelector('#entry_submit_button', { timeout: 10000 });
-
-    console.log('FINAL BUTTON FOUND');
-
-    await page.click('#entry_submit_button');
-
-    await page.waitForLoadState('networkidle');
-
-    const finalUrl = page.url();
-
-    console.log('SUCCESS:', finalUrl);
+    const title = await page.title();
 
     await browser.close();
 
-    res.json({
-      status: 'success',
-      finalUrl,
-      seat: current
+    return res.json({
+      success: true,
+      title,
     });
+  } catch (error) {
+    console.error("ERROR:", error);
 
-  } catch (err) {
-    console.error('ERROR:', err.message);
+    if (browser) {
+      await browser.close();
+    }
 
-    try {
-      if (page) {
-        await page.screenshot({
-          path: `error-${Date.now()}.png`,
-          fullPage: true
-        });
-      }
-    } catch (_) {}
-
-    try {
-      if (browser) await browser.close();
-    } catch (_) {}
-
-    res.status(500).json({
-      status: 'error',
-      message: err.message
+    return res.status(500).json({
+      success: false,
+      error: error.message,
     });
   }
 });
 
-app.listen(process.env.PORT || 3000, () => {
-  console.log(`Server running on port ${process.env.PORT || 3000}`);
+// Railway用PORT
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
+
+// 👇 強制生存（これで絶対落ちない）
+setInterval(() => {
+  console.log("alive...");
+}, 10000);
